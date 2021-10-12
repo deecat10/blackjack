@@ -3,7 +3,6 @@
 
 pragma solidity >=0.7.0 <0.9.0;
 
-import 'https://github.com/OpenZeppelin/openzeppelin-contracts/blob/release-v4.3/contracts/token/ERC721/ERC721.sol';
 import 'https://github.com/OpenZeppelin/openzeppelin-contracts/blob/release-v4.3/contracts/token/ERC20/ERC20.sol';
 
 
@@ -19,11 +18,8 @@ interface IERC20Token {
   event Approval(address indexed owner, address indexed spender, uint256 value);
 }
 
-contract GameSetup {
-    
-    uint public time;
-    
-    address admin;
+contract Game {
+
     
     address[] public players;
     
@@ -34,13 +30,10 @@ contract GameSetup {
         string suit;
         string index;
     }
+    
     mapping(address => Card[]) deck;
     mapping(address => uint) bets;
 
-    constructor() {
-        admin = msg.sender;
-        time = block.timestamp;
-    }
     
     function addPlayer(address _addr) public {
         players.push(_addr);
@@ -73,6 +66,7 @@ contract GameSetup {
     
     function addCard(address player, string memory suit, string memory index) public {
         Card memory card = Card(player, suit, index);
+        require(deck[player].length < 2, 'hand is full');
         deck[player].push(card);
     }
     
@@ -85,27 +79,18 @@ contract GameSetup {
 
 /**
  * @title Blackjack
- * @dev Store & retrieve value in a variable
  */
-contract Blackjack {
+contract Blackjack is Game {
     
     
-    
-    GameSetup game;
     
     
     string[] suits = ['clubs','diamonds','spades','hearts'];
     string[] ids = ['ace','2','3','4','5','6','7','8','9','10','jack','queen','king'];
+   
     
-    struct Card {
-        address holder;
-        string suit;
-        string index;
-    }
-    
-    
-    mapping(uint => Card) deck;
-    mapping(uint => GameSetup) games;
+    mapping(uint => Game) games;
+    mapping(uint => Card) allCards;
     uint totalGames = 0;
     
     address internal setupAddress;
@@ -117,7 +102,7 @@ contract Blackjack {
         
         for(uint suit=0; suit<suits.length; suit++) {
             for(uint id=0; id<ids.length; id++) {
-                deck[deckSize] = Card(
+                allCards[deckSize] = Card(
                     msg.sender,
                     suits[suit],
                     ids[id]
@@ -128,11 +113,10 @@ contract Blackjack {
     
     }
     
-    function getGameInfo(uint _gameIdx) public returns(uint[3] memory){
-        game = games[_gameIdx];
-        uint total = game.totalBets();
-        uint size = game.size();
-        uint min = game.minimumBet();
+    function getGameInfo(uint _gameIdx) public view returns(uint[3] memory){
+        uint total = games[_gameIdx].totalBets();
+        uint size = games[_gameIdx].size();
+        uint min = games[_gameIdx].minimumBet();
         
         return [total, size, min];
         
@@ -141,32 +125,10 @@ contract Blackjack {
         return totalGames;
     }
     
-    mapping(uint => uint) timestamps; 
-    mapping(uint => GameSetup) testContracts; // should return different timestamps per
-    uint len = 0;
-    
-    
-    
-    
-    function stamp() public returns(uint){
-        GameSetup test = new GameSetup();
-        
-        testContracts[len] = test;
-        timestamps[len] = test.time();
-        
-        return testContracts[len].time();
-    }
-    
-    function getStamp(uint id) public view returns(uint, uint) {
-        return(
-            testContracts[id].time(),
-            timestamps[id]
-        );
-    }
     
     function create() public {
         
-        games[totalGames] = new GameSetup();
+        games[totalGames] = new Game();
         totalGames++;
     }
     
@@ -174,49 +136,37 @@ contract Blackjack {
         return games[gameIdx].getBet(player);
     }
     
-    function minimumBet(uint gameIdx) public view returns(uint) {
+    function getBuyIn(uint gameIdx) public view returns(uint) {
         return games[gameIdx].minimumBet();
     }
     
     function join(uint gameIdx) public payable {
-        game = games[gameIdx];
-        
-        if(game.size() == 0) {
+
+        if(games[gameIdx].size() == 0) {
             games[gameIdx].setMinimumBet(msg.value);
         }
         
-        require(msg.value >= game.minimumBet(), "bet not enough");
+        require(msg.value >= games[gameIdx].minimumBet(), "bet not enough");
         
         games[gameIdx].addPlayer(msg.sender);
         games[gameIdx].setBet(msg.sender, msg.value);
         
     }
     
-    function start(uint gameIdx) public {
+    function start(uint gameIdx, uint more_randomness) public {
         
 
-        game = games[gameIdx];
+        require(games[gameIdx].size() > 0, 'not enough players');
         
-        require(game.size() > 0, 'not enough players');
-        
-        for (uint player=0; player<game.size(); player++) {
-            uint cardIdx = uint(keccak256(abi.encodePacked(block.timestamp, block.difficulty, msg.sender))) % 52;
+        for (uint player=0; player < games[gameIdx].size(); player++) {
+            uint cardIdx = uint(keccak256(abi.encodePacked(more_randomness, block.timestamp, block.difficulty, msg.sender))) % 52;
             
-            Card memory card = deck[cardIdx];
-            address addr = game.getPlayer(player);
+            Card memory card = allCards[cardIdx];
+            address addr = games[gameIdx].getPlayer(player);
             games[gameIdx].addCard(addr, card.suit, card.index);
-            
         }
         
 
-    }
-    
-    function bet(uint gameIdx) public {
-        
-        game = games[gameIdx];
-        
-        
-        
     }
     
     
